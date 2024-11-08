@@ -1,4 +1,4 @@
-use advent_of_code::utils::transform;
+use advent_of_code::utils::matrix::{test, transform};
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::fmt::{Debug, Display};
@@ -60,7 +60,6 @@ pub fn part_one(input: &str) -> Option<impl Debug + Display + num::Integer> {
     let mut won_card = None;
     let mut i = 0;
     for instruction in first.trim().split(",") {
-        println!("{}", instruction);
         i = instruction.parse().unwrap();
         cards.iter_mut().for_each(|c| c.mark_number(i));
         won_card = cards.iter().find(|c| c.has_col() || c.has_row());
@@ -78,7 +77,6 @@ pub fn part_two(input: &str) -> Option<impl Debug + Display + num::Integer> {
     let mut cards = other.iter().map(|s| BingoCard::from(s)).collect_vec();
     let mut i = 0;
     for instruction in first.trim().split(",") {
-        println!("{}", instruction);
         i = instruction.parse().unwrap();
         cards.iter_mut().for_each(|c| c.mark_number(i));
         let new_cards = cards

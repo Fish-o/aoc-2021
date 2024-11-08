@@ -115,10 +115,15 @@ where
     E: Clone,
 {
     fn clone(&self) -> Self {
-        Self { row_sep: self.row_sep.clone(), col_sep: self.col_sep.clone(), data: self.data.clone() }
+        Self {
+            row_sep: self.row_sep.clone(),
+            col_sep: self.col_sep.clone(),
+            data: self.data.clone(),
+        }
     }
 }
 
+#[test]
 pub fn test() {
     let input1 = "abc\ndef\nhij";
     let m1: Matrix<char> = Matrix::from_str(input1, "\n", "").parse().unwrap();

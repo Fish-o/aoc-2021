@@ -1,11 +1,14 @@
+use rayon::prelude::*;
+use std::fmt::{Debug, Display};
+use itertools::Itertools;
 advent_of_code::solution!(%DAY_NUMBER%);
 
-pub fn part_one(input: &str) -> Option<u32> {
-    None
+pub fn part_one(input: &str) -> Option<impl Debug + Display + num::Integer> {
+    None::<u64>
 }
 
-pub fn part_two(input: &str) -> Option<u32> {
-    None
+pub fn part_two(input: &str) -> Option<impl Debug + Display + num::Integer> {
+    None::<u64>
 }
 
 #[cfg(test)]

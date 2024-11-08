@@ -40,12 +40,3 @@ pub trait TreeNode<T: PartialOrd> {
     }
 }
 
-struct Log {
-    children: Vec<Box<Log>>,
-}
-
-impl TreeNode<f64> for Log {
-    fn children(&self) -> &Vec<Box<Self>> {
-        &self.children
-    }
-}

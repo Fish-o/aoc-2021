@@ -1,4 +1,4 @@
-use advent_of_code::utils::matrix::{test, transform};
+use advent_of_code::utils::matrix::transform;
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::fmt::{Debug, Display};

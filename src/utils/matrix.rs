@@ -1,9 +1,40 @@
 use std::{
+    error,
     fmt::{Debug, Display},
+    ops::{Add, AddAssign},
     str::FromStr,
 };
 
 use itertools::Itertools;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Pos(usize, usize);
+impl Pos {
+    pub fn from_rc(row: usize, col: usize) -> Self {
+        Pos(row, col)
+    }
+    pub fn from_xy(x: usize, y: usize) -> Self {
+        Pos(y, x)
+    }
+    pub fn get_xy(&self) -> (usize, usize) {
+        (self.1, self.0)
+    }
+    pub fn get_rc(&self) -> (usize, usize) {
+        (self.0, self.1)
+    }
+}
+impl Add for Pos {
+    type Output = Pos;
+    fn add(self, rhs: Self) -> Self::Output {
+        Pos(self.0 + rhs.0, self.1 + rhs.1)
+    }
+}
+
+impl AddAssign for Pos {
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 += rhs.0;
+        self.1 += rhs.1;
+    }
+}
 // TODO: Make row_sep and col_sep a split pattern instead of a string
 pub struct Matrix<E> {
     row_sep: String,
@@ -11,7 +42,54 @@ pub struct Matrix<E> {
     data: Vec<Vec<E>>,
 }
 
-impl<E> Matrix<E> {
+impl<E: Clone> Matrix<E> {
+    pub fn height(&self) -> usize {
+        self.data.len()
+    }
+    pub fn enumerate(&self) -> Vec<(Pos, &E)> {
+        self.data
+            .iter()
+            .enumerate()
+            .flat_map(|(r, row)| {
+                row.iter()
+                    .enumerate()
+                    .map(|(c, v)| (Pos::from_rc(r, c), v))
+                    .collect_vec()
+            })
+            .collect_vec()
+    }
+    pub fn width(&self) -> usize {
+        if self.height() == 0 {
+            0
+        } else {
+            self.data.first().unwrap().len()
+        }
+    }
+    pub fn get_pos(&self, pos: &Pos) -> Option<&E> {
+        Some(self.data.get(pos.0)?.get(pos.1)?)
+    }
+    pub fn neighbour_positions(&self, pos: &Pos) -> Vec<Pos> {
+        let mut r = vec![];
+        if pos.0 > 0 {
+            r.push(Pos::from_rc(pos.0 - 1, pos.1));
+        }
+        if pos.0 < self.height() - 1 {
+            r.push(Pos::from_rc(pos.0 + 1, pos.1));
+        }
+        if pos.1 > 0 {
+            r.push(Pos::from_rc(pos.0, pos.1 - 1));
+        }
+        if pos.1 < self.width() - 1 {
+            r.push(Pos::from_rc(pos.0, pos.1 + 1));
+        }
+        r
+    }
+    pub fn neighbours(&self, pos: &Pos) -> Vec<&E> {
+        self.neighbour_positions(pos)
+            .iter()
+            .map(|p| self.get_pos(p).expect("Neighbour does not exist!?"))
+            .collect_vec()
+    }
     pub fn rows(&self) -> Vec<Vec<&E>> {
         self.data
             .iter()
@@ -41,6 +119,42 @@ impl<E> Matrix<E> {
     pub fn get(&self, row: usize, col: usize) -> &E {
         self.data.iter().nth(row).unwrap().iter().nth(col).unwrap()
     }
+
+    /// flood_once denotes if each cell will only flood once to its neighbours, or continously.
+    /// Regions are not merged, and may overlap
+    pub fn flood_regions<F>(&self, seeds: &Vec<Pos>, f: F, flood_once: bool) -> Vec<Vec<Pos>>
+    where
+        F: Fn(&Self, &Pos, &Vec<Pos>) -> Vec<Pos>,
+    {
+        let m = self;
+        assert!(seeds.iter().all(|r| m.get_pos(r).is_some()));
+        let mut regions = seeds
+            .iter()
+            .map(|s| (vec![s.clone()], vec![s.clone()]))
+            .collect_vec();
+        let mut updated = false;
+        while !updated {
+            updated = false;
+            regions.iter_mut().for_each(|(to_flood, region)| {
+                let mut new_cells = vec![];
+                for cell in to_flood.iter() {
+                    let mut floods_to = f(&m, cell, &region)
+                        .into_iter()
+                        .filter(|c| !region.contains(c))
+                        .collect_vec();
+                    if floods_to.len() > 0 {
+                        updated = true;
+                    }
+                    new_cells.append(&mut floods_to);
+                }
+                region.append(to_flood);
+                if flood_once {
+                    std::mem::swap(to_flood, &mut new_cells);
+                }
+            });
+        }
+        regions.into_iter().map(|(_, r)| r).collect_vec()
+    }
 }
 impl Matrix<String> {
     pub fn from_str(input: &str, row_sep: &str, col_sep: &str) -> Self {
@@ -48,6 +162,7 @@ impl Matrix<String> {
             row_sep: row_sep.to_string(),
             col_sep: col_sep.to_string(),
             data: input
+                .trim()
                 .split(row_sep)
                 .map(|r| {
                     if col_sep.is_empty() {

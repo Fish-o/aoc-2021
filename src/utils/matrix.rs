@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     error,
     fmt::{Debug, Display},
     ops::{Add, AddAssign},
@@ -6,7 +7,8 @@ use std::{
 };
 
 use itertools::Itertools;
-#[derive(Clone, Debug, PartialEq, Eq)]
+use rayon::collections;
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Pos(usize, usize);
 impl Pos {
     pub fn from_rc(row: usize, col: usize) -> Self {
@@ -121,8 +123,13 @@ impl<E: Clone> Matrix<E> {
     }
 
     /// flood_once denotes if each cell will only flood once to its neighbours, or continously.
-    /// Regions are not merged, and may overlap
-    pub fn flood_regions<F>(&self, seeds: &Vec<Pos>, f: F, flood_once: bool) -> Vec<Vec<Pos>>
+    pub fn flood_regions<F>(
+        &self,
+        seeds: &Vec<Pos>,
+        f: F,
+        flood_once: bool,
+        allow_merging: bool,
+    ) -> Vec<Vec<Pos>>
     where
         F: Fn(&Self, &Pos, &Vec<Pos>) -> Vec<Pos>,
     {
@@ -132,28 +139,94 @@ impl<E: Clone> Matrix<E> {
             .iter()
             .map(|s| (vec![s.clone()], vec![s.clone()]))
             .collect_vec();
-        let mut updated = false;
-        while !updated {
-            updated = false;
-            regions.iter_mut().for_each(|(to_flood, region)| {
-                let mut new_cells = vec![];
-                for cell in to_flood.iter() {
-                    let mut floods_to = f(&m, cell, &region)
-                        .into_iter()
-                        .filter(|c| !region.contains(c))
-                        .collect_vec();
-                    if floods_to.len() > 0 {
-                        updated = true;
-                    }
-                    new_cells.append(&mut floods_to);
-                }
-                region.append(to_flood);
-                if flood_once {
-                    std::mem::swap(to_flood, &mut new_cells);
-                }
+        let mut updated = true;
+        let mut region_owns: Vec<Vec<Option<usize>>> = vec![vec![None; m.width()]; m.height()];
+        seeds
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (i, p.get_rc()))
+            .for_each(|(i, (r, c))| {
+                *region_owns.get_mut(r).unwrap().get_mut(c).unwrap() = Some(i);
             });
+
+        let mut takeovers = (0..seeds.len()).collect_vec();
+        while updated {
+            updated = false;
+            // (a, b, size)
+            // a collides into b, and a has size "size"
+            let mut collisions = vec![];
+
+            regions
+                .iter_mut()
+                .enumerate()
+                .for_each(|(i, (to_flood, region))| {
+                    let mut new_cells = vec![];
+                    for cell in to_flood.iter() {
+                        let floods_to = f(&m, cell, &region)
+                            .into_iter()
+                            .filter(|c| !region.contains(c) && !to_flood.contains(c))
+                            .collect_vec();
+                        if floods_to.len() > 0 {
+                            updated = true;
+                        }
+                        let mut floods_to = floods_to
+                            .into_iter()
+                            .filter(|p| {
+                                let (r, c) = p.get_rc();
+                                let owned_by = region_owns.get_mut(r).unwrap().get_mut(c).unwrap();
+                                if owned_by.is_none() {
+                                    *owned_by = Some(i);
+                                    return true;
+                                }
+                                let owned_by = owned_by.unwrap();
+                                let owned_by = takeovers[owned_by];
+                                if owned_by == i {
+                                    return false;
+                                }
+                                collisions.push((i, owned_by, region.len()));
+                                return false;
+                            })
+                            .collect_vec();
+                        new_cells.append(&mut floods_to);
+                    }
+                    region.append(to_flood);
+                    if flood_once {
+                        std::mem::swap(to_flood, &mut new_cells);
+                    }
+                });
+
+            collisions.sort_by_key(|c| c.2);
+            for (a, b, _) in collisions {
+                let ai = *takeovers.get(a).unwrap();
+                let bi = *takeovers.get(b).unwrap();
+                if ai == bi {
+                    continue;
+                }
+                let b = regions.get_mut(bi).unwrap();
+                let mut c = (vec![], vec![]);
+                std::mem::swap(b, &mut c);
+                let a = regions.get_mut(ai).unwrap();
+                a.0.append(&mut c.0);
+                a.1.append(&mut c.1);
+
+                a.0.sort();
+                a.0.dedup();
+
+                a.1.sort();
+                a.1.dedup();
+
+                takeovers.iter_mut().for_each(|f| {
+                    if f == &bi {
+                        *f = ai;
+                    }
+                });
+            }
         }
-        regions.into_iter().map(|(_, r)| r).collect_vec()
+        regions
+            .into_iter()
+            .filter(|(_, b)| !b.is_empty())
+            .map(|(_, r)| r)
+            .collect_vec()
     }
 }
 impl Matrix<String> {

@@ -9,7 +9,7 @@ pub fn part_one(input: &str) -> Option<usize> {
     Some(
         m.enumerate()
             .into_iter()
-            .filter(|(p, v)| m.neighbours(p).iter().all(|n| n > v))
+            .filter(|(p, v)| m.touching_cells(p).iter().all(|n| n > v))
             .map(|(p, h)| h + 1)
             .sum::<usize>(),
     )
@@ -26,7 +26,7 @@ pub fn part_two(input: &str) -> Option<usize> {
     let mut res = m.flood_regions(
         &seeds,
         |m, p, r| {
-            m.neighbour_positions(p)
+            m.touching_positions(p)
                 .into_iter()
                 .filter(|p| m.get_pos(&p).unwrap() < &(9 as usize))
                 .collect_vec()

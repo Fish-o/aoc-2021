@@ -1,6 +1,8 @@
 {
     "editor.inlayHints.enabled": "offUnlessPressed",
     "cSpell.words": [
-        "neighbour"
+        "Chebyshev",
+        "neighbour",
+        "neighbours"
     ]
 }

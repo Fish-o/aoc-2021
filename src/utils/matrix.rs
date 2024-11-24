@@ -8,6 +8,14 @@ use std::{
 
 use itertools::Itertools;
 use rayon::collections;
+/// https://en.wikipedia.org/wiki/Minkowski_distance
+
+pub enum Metric {
+    Chebyshev,
+    TODO_Euclidean,
+    Taxicab,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Pos(usize, usize);
 impl Pos {
@@ -48,6 +56,24 @@ impl<E: Clone> Matrix<E> {
     pub fn height(&self) -> usize {
         self.data.len()
     }
+    pub fn count(&self) -> usize {
+        self.height() * self.width()
+    }
+    pub fn positions(&self) -> Vec<Pos> {
+        (0..self.height())
+            .flat_map(|r| {
+                (0..self.width())
+                    .map(|c| Pos::from_rc(r.clone(), c))
+                    .collect_vec()
+            })
+            .collect_vec()
+    }
+    pub fn cells_mut(&mut self) -> Vec<&mut E> {
+        self.data
+            .iter_mut()
+            .flat_map(|row| row.iter_mut().collect_vec())
+            .collect_vec()
+    }
     pub fn enumerate(&self) -> Vec<(Pos, &E)> {
         self.data
             .iter()
@@ -70,7 +96,11 @@ impl<E: Clone> Matrix<E> {
     pub fn get_pos(&self, pos: &Pos) -> Option<&E> {
         Some(self.data.get(pos.0)?.get(pos.1)?)
     }
-    pub fn neighbour_positions(&self, pos: &Pos) -> Vec<Pos> {
+    pub fn get_pos_mut(&mut self, pos: &Pos) -> Option<&mut E> {
+        Some(self.data.get_mut(pos.0)?.get_mut(pos.1)?)
+    }
+
+    pub fn touching_positions(&self, pos: &Pos) -> Vec<Pos> {
         let mut r = vec![];
         if pos.0 > 0 {
             r.push(Pos::from_rc(pos.0 - 1, pos.1));
@@ -86,11 +116,61 @@ impl<E: Clone> Matrix<E> {
         }
         r
     }
-    pub fn neighbours(&self, pos: &Pos) -> Vec<&E> {
-        self.neighbour_positions(pos)
+    pub fn touching_cells(&self, pos: &Pos) -> Vec<&E> {
+        self.touching_positions(pos)
             .iter()
             .map(|p| self.get_pos(p).expect("Neighbour does not exist!?"))
             .collect_vec()
+    }
+    pub fn neighbours_in_range(&self, p: &Pos, metric: &Metric, mut distance: usize) -> Vec<Pos> {
+        let mut res = vec![];
+        let (r, c) = p.get_rc();
+        match metric {
+            Metric::Chebyshev => {
+                for row in (if r < distance { 0 } else { r - distance })
+                    ..=(if r + distance >= self.height() {
+                        self.height() - 1
+                    } else {
+                        r + distance
+                    })
+                {
+                    for col in (if c < distance { 0 } else { c - distance })
+                        ..=(if c + distance >= self.width() {
+                            self.width() - 1
+                        } else {
+                            c + distance
+                        })
+                    {
+                        if row != r || col != c {
+                            res.push(Pos::from_rc(row, col));
+                        }
+                    }
+                }
+            }
+            Metric::Taxicab => {
+                let h = self.height() as i128;
+                let w = self.width() as i128;
+                for d in 1..=distance {
+                    let mut row: i128 = (r as i128) - (d as i128);
+                    let mut col: i128 = c as i128;
+                    for (dr, dc) in vec![(-1, 1), (-1, -1), (1, -1), (1, 1)] {
+                        for _ in 0..d {
+                            row += dr;
+                            col += dc;
+                            if row < 0 || row >= h || col < 0 || col > w {
+                                continue;
+                            }
+                            res.push(Pos::from_rc(row as usize, col as usize));
+                        }
+                    }
+                }
+            }
+            Metric::TODO_Euclidean => {
+                // TODO: Implement euclidean distance
+                todo!()
+            }
+        }
+        res
     }
     pub fn rows(&self) -> Vec<Vec<&E>> {
         self.data

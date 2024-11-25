@@ -51,8 +51,42 @@ pub struct Matrix<E> {
     col_sep: String,
     data: Vec<Vec<E>>,
 }
-
-impl<E: Clone> Matrix<E> {
+impl<E> Matrix<E> {
+    pub fn insert_row(&mut self, at: usize, row: Vec<E>) {
+        assert_eq!(row.len(), self.width());
+        self.data.insert(at, row);
+    }
+    pub fn insert_col(&mut self, at: usize, col: Vec<E>) {
+        assert_eq!(col.len(), self.height());
+        let mut col = col.into_iter();
+        for row in &mut self.data {
+            row.insert(at, col.next().unwrap());
+        }
+    }
+    pub fn remove_row(&mut self, at: usize) -> Vec<E> {
+        self.data.remove(at)
+    }
+    pub fn remove_col(&mut self, at: usize) -> Vec<E> {
+        let mut col = vec![];
+        for row in &mut self.data {
+            col.push(row.remove(at));
+        }
+        col
+    }
+    pub fn contains_pos(&self, pos: &Pos) -> bool {
+        pos.0 < self.height() && pos.1 < self.width()
+    }
+    pub fn new_empty(rows: usize, cols: usize) -> Matrix<Option<E>> {
+        Matrix {
+            row_sep: "\n".to_owned(),
+            col_sep: "".to_owned(),
+            data: std::iter::repeat_with(|| {
+                std::iter::repeat_with(|| None).take(cols).collect_vec()
+            })
+            .take(rows)
+            .collect_vec(),
+        }
+    }
     pub fn height(&self) -> usize {
         self.data.len()
     }
@@ -99,7 +133,151 @@ impl<E: Clone> Matrix<E> {
     pub fn get_pos_mut(&mut self, pos: &Pos) -> Option<&mut E> {
         Some(self.data.get_mut(pos.0)?.get_mut(pos.1)?)
     }
+    pub fn rows(&self) -> Vec<Vec<&E>> {
+        self.data
+            .iter()
+            .map(|r| r.iter().collect_vec())
+            .collect_vec()
+    }
+    pub fn columns(&self) -> Vec<Vec<&E>> {
+        if self.data.len() == 0 {
+            return vec![];
+        }
+        let h = self.data.len();
+        let w = self
+            .data
+            .first()
+            .expect("Matrix empty while it should not be!?")
+            .len();
+        let mut res = Vec::with_capacity(w);
+        for c in 0..w {
+            let mut col = Vec::with_capacity(h);
+            for r in 0..h {
+                col.push(self.get(r, c))
+            }
+            res.push(col);
+        }
+        res
+    }
+    pub fn get(&self, row: usize, col: usize) -> &E {
+        self.data.iter().nth(row).unwrap().iter().nth(col).unwrap()
+    }
 
+    pub fn get_mut(&mut self, row: usize, col: usize) -> &mut E {
+        self.data.get_mut(row).unwrap().get_mut(col).unwrap()
+    }
+    pub fn map<F, B>(&self, f: F) -> Matrix<B>
+    where
+        F: Fn(Pos, &E) -> B,
+    {
+        Matrix {
+            col_sep: self.col_sep.clone(),
+            row_sep: self.row_sep.clone(),
+            data: self
+                .data
+                .iter()
+                .enumerate()
+                .map(|(ri, r)| {
+                    r.iter()
+                        .enumerate()
+                        .map(|(ci, c)| f(Pos::from_rc(ri, ci), c))
+                        .collect_vec()
+                })
+                .collect_vec(),
+        }
+    }
+}
+impl<E> Matrix<Option<E>> {
+    pub fn sequence(&self) -> Option<Matrix<&E>> {
+        Some(Matrix {
+            row_sep: self.row_sep.clone(),
+            col_sep: self.col_sep.clone(),
+            data: self
+                .data
+                .iter()
+                .map(|row| row.iter().map(|c| c.as_ref()).collect::<Option<Vec<&E>>>())
+                .collect::<Option<Vec<_>>>()?,
+        })
+    }
+}
+
+impl<E: Clone> Matrix<&E> {
+    pub fn to_owned_values(&self) -> Matrix<E> {
+        Matrix {
+            col_sep: self.col_sep.clone(),
+            row_sep: self.row_sep.clone(),
+            data: self
+                .data
+                .iter()
+                .map(|r| r.iter().map(|e| E::clone(e)).collect_vec())
+                .collect_vec(),
+        }
+    }
+}
+
+impl<E: Clone> Matrix<&&E> {
+    pub fn to_owned_values_twice(&self) -> Matrix<E> {
+        Matrix {
+            col_sep: self.col_sep.clone(),
+            row_sep: self.row_sep.clone(),
+            data: self
+                .data
+                .iter()
+                .map(|r| r.iter().map(|e| E::clone(e)).collect_vec())
+                .collect_vec(),
+        }
+    }
+}
+impl<E: Clone> Matrix<E> {
+    pub fn flip_hor(&self) -> Matrix<E> {
+        let mut m = self.clone();
+        for r in 0..self.height() {
+            for c in 0..self.width() {
+                *(m.get_mut(r, c)) = self.get(self.height() - r - 1, c).clone();
+            }
+        }
+        m
+    }
+    pub fn flip_ver(&self) -> Matrix<E> {
+        let mut m = self.clone();
+        for r in 0..self.height() {
+            for c in 0..self.width() {
+                *(m.get_mut(r, c)) = self.get(r, self.width() - c - 1).clone();
+            }
+        }
+        m
+    }
+    pub fn merge<Compare, Generate>(&self, other: &Self, cmp: Compare, g: Generate) -> Matrix<E>
+    where
+        Compare: Fn(&Pos, E, E) -> E,
+        Generate: Fn(&Pos) -> E,
+    {
+        let max = (
+            self.height().max(other.height()),
+            self.width().max(other.width()),
+        );
+
+        Self {
+            row_sep: self.row_sep.clone(),
+            col_sep: self.col_sep.clone(),
+            data: (0..max.0)
+                .map(|r| {
+                    (0..max.1)
+                        .map(|c| {
+                            let p = Pos::from_rc(r, c);
+                            let a = self.get_pos(&p);
+                            let b = other.get_pos(&p);
+                            match (a, b) {
+                                (None, None) => g(&p),
+                                (Some(a), Some(b)) => cmp(&p, a.clone(), b.clone()),
+                                (_, Some(a)) | (Some(a), _) => a.clone(),
+                            }
+                        })
+                        .collect_vec()
+                })
+                .collect_vec(),
+        }
+    }
     pub fn touching_positions(&self, pos: &Pos) -> Vec<Pos> {
         let mut r = vec![];
         if pos.0 > 0 {
@@ -171,35 +349,6 @@ impl<E: Clone> Matrix<E> {
             }
         }
         res
-    }
-    pub fn rows(&self) -> Vec<Vec<&E>> {
-        self.data
-            .iter()
-            .map(|r| r.iter().collect_vec())
-            .collect_vec()
-    }
-    pub fn columns(&self) -> Vec<Vec<&E>> {
-        if self.data.len() == 0 {
-            return vec![];
-        }
-        let h = self.data.len();
-        let w = self
-            .data
-            .first()
-            .expect("Matrix empty while it should not be!?")
-            .len();
-        let mut res = Vec::with_capacity(w);
-        for c in 0..w {
-            let mut col = Vec::with_capacity(h);
-            for r in 0..h {
-                col.push(self.get(r, c))
-            }
-            res.push(col);
-        }
-        res
-    }
-    pub fn get(&self, row: usize, col: usize) -> &E {
-        self.data.iter().nth(row).unwrap().iter().nth(col).unwrap()
     }
 
     /// flood_once denotes if each cell will only flood once to its neighbours, or continously.
@@ -327,8 +476,24 @@ impl Matrix<String> {
                 .collect_vec(),
         }
     }
+    pub fn from_grid(input: &str) -> Self {
+        Self::from_str(input, "\n", "")
+    }
 }
 
+impl<E> Matrix<Option<E>> {
+    pub fn from_points(points: Vec<(Pos, E)>) -> Self {
+        let high = points
+            .iter()
+            .map(|(p, _)| p)
+            .fold((0, 0), |r, c| (r.0.max(c.0), r.1.max(c.1)));
+        let mut m = Matrix::new_empty(high.0 + 1, high.1 + 1);
+        for (p, v) in points.into_iter() {
+            *(m.get_pos_mut(&p).unwrap()) = Some(v);
+        }
+        m
+    }
+}
 impl<S: AsRef<str>> Matrix<S> {
     pub fn parse<F>(&self) -> Result<Matrix<F>, <F as FromStr>::Err>
     where
@@ -418,4 +583,74 @@ pub fn transform<E: Clone>(d: &Vec<Vec<E>>) -> Vec<Vec<E>> {
         res.push(col);
     }
     res
+}
+
+pub enum Shape {
+    Rectangle(Pos, Pos),
+    Above(usize),
+    Below(usize),
+    Left(usize),
+    Right(usize),
+}
+
+impl<E: Clone> Matrix<E> {
+    pub fn slice(&self, shape: &Shape) -> Matrix<E> {
+        match shape {
+            Shape::Rectangle(a, b) => {
+                assert!(self.contains_pos(&a));
+                assert!(self.contains_pos(&b));
+                let low = (a.0.min(b.0), a.1.min(b.1));
+                let high = (a.0.max(b.0), a.1.max(b.1));
+                let mut m: Matrix<Option<&E>> = Matrix::new_empty(high.0 - low.0, high.1 - low.1);
+                for r in low.0..high.0 {
+                    for c in low.1..high.1 {
+                        *(m.get_mut(r - low.0, c - low.1)) = Some(self.get(r, c))
+                    }
+                }
+                m.sequence().unwrap().to_owned_values_twice()
+            }
+            Shape::Above(row) => {
+                assert!(row < &self.height());
+                let mut m: Matrix<Option<&E>> = Matrix::new_empty(*row, self.width());
+                for r in 0..*row {
+                    for c in 0..self.width() {
+                        *(m.get_mut(r, c)) = Some(self.get(r, c));
+                    }
+                }
+                m.sequence().unwrap().to_owned_values_twice()
+            }
+            Shape::Below(row) => {
+                assert!(row < &self.height());
+                let height = self.height() - row - 1;
+                let mut m: Matrix<Option<&E>> = Matrix::new_empty(height, self.width());
+                for r in 0..height {
+                    for c in 0..self.width() {
+                        *(m.get_mut(r, c)) = Some(self.get(r + row + 1, c));
+                    }
+                }
+                m.sequence().unwrap().to_owned_values_twice()
+            }
+            Shape::Left(col) => {
+                assert!(col < &self.width());
+                let mut m: Matrix<Option<&E>> = Matrix::new_empty(self.height(), *col);
+                for r in 0..self.height() {
+                    for c in 0..*col {
+                        *(m.get_mut(r, c)) = Some(self.get(r, c));
+                    }
+                }
+                m.sequence().unwrap().to_owned_values_twice()
+            }
+            Shape::Right(col) => {
+                assert!(col < &self.width());
+                let width = self.width() - col - 1;
+                let mut m: Matrix<Option<&E>> = Matrix::new_empty(self.height(), width);
+                for r in 0..self.height() {
+                    for c in 0..width {
+                        *(m.get_mut(r, c)) = Some(self.get(r, c + col + 1));
+                    }
+                }
+                m.sequence().unwrap().to_owned_values_twice()
+            }
+        }
+    }
 }

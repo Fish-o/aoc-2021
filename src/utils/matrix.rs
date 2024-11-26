@@ -16,7 +16,7 @@ pub enum Metric {
     Taxicab,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Pos(usize, usize);
 impl Pos {
     pub fn from_rc(row: usize, col: usize) -> Self {
@@ -63,6 +63,18 @@ impl<E> Matrix<E> {
             row.insert(at, col.next().unwrap());
         }
     }
+    pub fn push_row(&mut self, row: Vec<E>) {
+        assert_eq!(row.len(), self.width());
+        self.data.push(row);
+    }
+    pub fn push_col(&mut self, col: Vec<E>) {
+        assert_eq!(col.len(), self.height());
+        let mut col = col.into_iter();
+        for row in &mut self.data {
+            row.push(col.next().unwrap());
+        }
+    }
+
     pub fn remove_row(&mut self, at: usize) -> Vec<E> {
         self.data.remove(at)
     }
@@ -159,6 +171,22 @@ impl<E> Matrix<E> {
         }
         res
     }
+    pub fn row(&self, index: usize) -> Option<&Vec<E>> {
+        self.data.get(index)
+    }
+    pub fn col(&self, index: usize) -> Option<Vec<&E>> {
+        if index >= self.width() {
+            None
+        } else {
+            Some(
+                self.data
+                    .iter()
+                    .map(|r| r.get(index).unwrap())
+                    .collect_vec(),
+            )
+        }
+    }
+
     pub fn get(&self, row: usize, col: usize) -> &E {
         self.data.iter().nth(row).unwrap().iter().nth(col).unwrap()
     }
@@ -477,7 +505,10 @@ impl Matrix<String> {
         }
     }
     pub fn from_grid(input: &str) -> Self {
-        Self::from_str(input, "\n", "")
+        Self::from_str(input.trim(), "\n", "")
+    }
+    pub fn from_ugrid(input: &str) -> Matrix<usize> {
+        Matrix::from_grid(input).parse::<usize>().unwrap()
     }
 }
 
